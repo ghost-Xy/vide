@@ -1,0 +1,9 @@
+# AutoVideoEditor 依赖列表
+PyQt5==5.15.10
+opencv-python==4.9.0.80
+numpy==1.26.4
+moviepy==1.0.3
+imageio==2.34.1
+imageio-ffmpeg==0.4.9
+tqdm==4.66.2
+requests==2.32.0
