@@ -1,0 +1,90 @@
+name: Build AutoVideoEditor
+
+on:
+  push:
+    branches: [ main ]
+  release:
+    types: [ created ]
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ["3.10"]
+      fail-fast: false
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+        cache: 'pip'
+    
+    # Ubuntu/Linux 依赖安装
+    - name: Install system dependencies (Ubuntu)
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libxcb-xinerama0 libgl1-mesa-glx ffmpeg
+        sudo ln -s /usr/lib/x86_64-linux-gnu/libxcb-util.so.1 /usr/lib/x86_64-linux-gnu/libxcb-util.so.0
+        sudo pip install -U setuptools
+    
+    # Windows 依赖安装
+    - name: Install system dependencies (Windows)
+      if: matrix.os == 'windows-latest'
+      run: |
+        choco install ffmpeg -y
+    
+    # macOS 依赖安装
+    - name: Install system dependencies (macOS)
+      if: matrix.os == 'macos-latest'
+      run: |
+        brew install ffmpeg
+        pip install -U setuptools
+    
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install wheel
+        pip install pyinstaller PyQt5 opencv-python numpy moviepy imageio imageio-ffmpeg tqdm
+        
+        # 为Linux和macOS安装额外的PyQt5依赖
+        if [ "${{ matrix.os }}" == 'ubuntu-latest' ] || [ "${{ matrix.os }}" == 'macos-latest' ]; then
+          pip install PyQt5-sip PyQt5-Qt5
+        fi
+    
+    # Windows 构建
+    - name: Build executable (Windows)
+      if: matrix.os == 'windows-latest'
+      run: |
+        pyinstaller --noconfirm --name AutoVideoEditor --onefile --windowed --icon=src/icons/icon.ico src/main.py
+        7z a -tzip AutoVideoEditor_Windows.zip dist/AutoVideoEditor.exe
+    
+    # macOS 构建
+    - name: Build application (macOS)
+      if: matrix.os == 'macos-latest'
+      run: |
+        pyinstaller --noconfirm --name AutoVideoEditor --onefile --windowed --icon=src/icons/icon.icns src/main.py
+        zip -r AutoVideoEditor_macOS.zip dist/AutoVideoEditor
+    
+    # Linux 构建
+    - name: Build application (Linux)
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        pyinstaller --noconfirm --name AutoVideoEditor --onefile --windowed --icon=src/icons/icon.png src/main.py
+        zip -r AutoVideoEditor_Linux.zip dist/AutoVideoEditor
+    
+    # 上传构建产物
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: AutoVideoEditor_${{ matrix.os }}
+        path: |
+          AutoVideoEditor_*.zip
+        retention-days: 7
+        if-no-files-found: error
