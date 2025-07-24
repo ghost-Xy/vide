@@ -1,4 +1,4 @@
-name: AutoVideoEditor Multi-Platform Build
+name: AutoVideoEditor Multi-Platform CI
 
 on:
   push:
@@ -8,8 +8,9 @@ on:
 
 jobs:
   windows-build:
+    name: Build Windows Executable
     runs-on: windows-latest
-    name: Build for Windows
+    timeout-minutes: 30
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -18,31 +19,39 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: "3.10"
+        architecture: "x64"
+      
+    - name: Install FFmpeg
+      shell: powershell
+      run: |
+        Invoke-WebRequest -Uri "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-full.7z" -OutFile "ffmpeg.7z"
+        7z x ffmpeg.7z -o"C:\ffmpeg" | Out-Null
+        $env:Path += ";C:\ffmpeg\bin"
         
     - name: Install dependencies
       run: |
-        python -m pip install --upgrade pip wheel
-        pip install pyinstaller==6.5.0 PyQt5==5.15.10 opencv-python==4.9.0.80 numpy==1.26.4 moviepy==1.0.3 imageio imageio-ffmpeg tqdm
+        python -m pip install --upgrade pip
+        pip install wheel pyinstaller==5.13.2 opencv-python-headless==4.9.0.80 numpy==1.26.4 PyQt5==5.15.10 moviepy==1.0.3 tqdm==4.66.1
+        pip install imageio==2.34.0 imageio-ffmpeg==0.4.9
         
     - name: Prepare build
       run: |
-        # 创建版本文件
         echo "Version: 1.0.0" > version.txt
-        echo "Platform: Windows" >> version.txt
-        echo "Build Date: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" >> version.txt
+        echo "Build Date: %DATE% %TIME%" >> version.txt
         
     - name: Run PyInstaller
       run: |
-        pyinstaller `
-          --noconfirm `
-          --name AutoVideoEditor `
-          --onefile `
-          --windowed `
-          --add-data "version.txt;." `
-          --icon "src/icons/icon.ico" `
+        pyinstaller ^
+          --name AutoVideoEditor ^
+          --onefile ^
+          --windowed ^
+          --add-data "version.txt;." ^
+          --icon "src/icons/icon.ico" ^
+          --hidden-import "cv2" ^
+          --hidden-import "PyQt5" ^
           src/main.py
-        
-    - name: Create release package
+          
+    - name: Create ZIP package
       run: |
         Compress-Archive -Path "dist\AutoVideoEditor.exe" -DestinationPath "AutoVideoEditor_Windows.zip"
         
@@ -53,42 +62,48 @@ jobs:
         path: AutoVideoEditor_Windows.zip
 
   linux-build:
-    runs-on: ubuntu-latest
-    name: Build for Linux
-    container: python:3.10-slim-bullseye
+    name: Build Linux Executable
+    runs-on: ubuntu-20.04
+    timeout-minutes: 30
+    container:
+      image: debian:bullseye
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
       
-    - name: Install dependencies
+    - name: Install system dependencies
       run: |
         apt-get update
-        apt-get install -y ffmpeg libgl1 libxcb-xinerama0 libxkbcommon-x11-0
-        
-        ln -s /usr/lib/x86_64-linux-gnu/libxcb-util.so.1 /usr/lib/x86_64-linux-gnu/libxcb-util.so.0 || true
+        apt-get install -y python3-pip python3-dev ffmpeg libgl1 libxcb-xinerama0 libxkbcommon-x11-0
         ln -s /usr/lib/x86_64-linux-gnu/libGL.so.1 /usr/lib/x86_64-linux-gnu/libGL.so || true
+        ln -s /usr/lib/x86_64-linux-gnu/libxcb-util.so.1 /usr/lib/x86_64-linux-gnu/libxcb-util.so.0 || true
+        mkdir -p /usr/lib/x86_64-linux-gnu/qt5/plugins
+        ln -s /usr/lib/x86_64-linux-gnu/qt5/plugins/platforms /usr/lib/python3.9/site-packages/PyQt5/Qt5/plugins || true
         
-        pip install --upgrade pip wheel
-        pip install pyinstaller==6.5.0 opencv-python-headless==4.9.0.80 numpy==1.26.4 moviepy==1.0.3 imageio imageio-ffmpeg tqdm PyQt5==5.15.10
+    - name: Install Python dependencies
+      run: |
+        python3 -m pip install --upgrade pip
+        pip3 install wheel pyinstaller==5.13.2 opencv-python-headless==4.9.0.80 numpy==1.26.4 PyQt5==5.15.10 moviepy==1.0.3 tqdm==4.66.1
+        pip3 install imageio==2.34.0 imageio-ffmpeg==0.4.9
         
     - name: Prepare build
       run: |
         echo "Version: 1.0.0" > version.txt
-        echo "Platform: Linux" >> version.txt
         echo "Build Date: $(date '+%Y-%m-%d %H:%M:%S')" >> version.txt
         
     - name: Run PyInstaller
       run: |
         export QT_QPA_PLATFORM=offscreen
         pyinstaller \
-          --noconfirm \
           --name AutoVideoEditor \
           --onefile \
           --add-data "version.txt:." \
           --icon "src/icons/icon.png" \
+          --hidden-import "cv2" \
+          --hidden-import "PyQt5" \
           src/main.py
-        
-    - name: Create release package
+          
+    - name: Create ZIP package
       run: |
         cd dist
         zip -r ../AutoVideoEditor_Linux.zip AutoVideoEditor
@@ -100,8 +115,9 @@ jobs:
         path: AutoVideoEditor_Linux.zip
 
   macos-build:
-    runs-on: macos-latest
-    name: Build for macOS
+    name: Build macOS Application
+    runs-on: macos-13
+    timeout-minutes: 30
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -111,39 +127,42 @@ jobs:
       with:
         python-version: "3.10"
         
-    - name: Install dependencies
+    - name: Install FFmpeg
       run: |
         brew install ffmpeg
-        python3 -m pip install --upgrade pip wheel
-        pip3 install pyinstaller==6.5.0 PyQt5==5.15.10 opencv-python==4.9.0.80 numpy==1.26.4 moviepy==1.0.3 imageio imageio-ffmpeg tqdm
+        
+    - name: Install Python dependencies
+      run: |
+        python3 -m pip install --upgrade pip
+        pip3 install wheel pyinstaller==5.13.2 opencv-python==4.9.0.80 numpy==1.26.4 PyQt5==5.15.10 moviepy==1.0.3 tqdm==4.66.1
+        pip3 install imageio==2.34.0 imageio-ffmpeg==0.4.9
         
     - name: Prepare build
       run: |
         echo "Version: 1.0.0" > version.txt
-        echo "Platform: macOS" >> version.txt
         echo "Build Date: $(date '+%Y-%m-%d %H:%M:%S')" >> version.txt
         
     - name: Run PyInstaller
       run: |
         pyinstaller \
-          --noconfirm \
           --name AutoVideoEditor \
           --onefile \
           --windowed \
           --add-data "version.txt:." \
           --icon "src/icons/icon.icns" \
+          --hidden-import "cv2" \
+          --hidden-import "PyQt5" \
           src/main.py
-        
-    - name: Sign application
+          
+    - name: Fix permissions and sign
       run: |
         cd dist
         xattr -cr AutoVideoEditor
         codesign --force --deep --sign - AutoVideoEditor
         
-    - name: Create release package
+    - name: Create ZIP package
       run: |
-        cd dist
-        zip -r ../AutoVideoEditor_macOS.zip AutoVideoEditor
+        ditto -c -k --keepParent dist/AutoVideoEditor AutoVideoEditor_macOS.zip
         
     - name: Upload artifact
       uses: actions/upload-artifact@v4
