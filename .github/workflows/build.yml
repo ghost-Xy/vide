@@ -23,20 +23,23 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
+        cache: 'pip'
     
     # Ubuntu/Linux 依赖安装
-    - name: Install system dependencies (Ubuntu)
+    - name: Install system dependencies (Linux)
       if: runner.os == 'Linux'
       run: |
         sudo apt-get update
-        sudo apt-get install -y libxcb-xinerama0 libgl1-mesa-glx ffmpeg
+        sudo apt-get install -y libxcb-xinerama0 libgl1-mesa-glx ffmpeg libxcb-util1 libxcb-render-util0 libxkbcommon-x11-0
         sudo ln -s /usr/lib/x86_64-linux-gnu/libxcb-util.so.1 /usr/lib/x86_64-linux-gnu/libxcb-util.so.0
+        sudo ln -s /usr/lib/x86_64-linux-gnu/libxcb-render-util.so.0 /usr/lib/x86_64-linux-gnu/libxcb-render-util.so.1
+        sudo ln -s /usr/lib/x86_64-linux-gnu/libxkbcommon.so.0 /usr/lib/x86_64-linux-gnu/libxkbcommon.so
     
     # Windows 依赖安装
     - name: Install system dependencies (Windows)
       if: runner.os == 'Windows'
       run: |
-        choco install ffmpeg -y
+        choco install ffmpeg -y --no-progress
     
     # macOS 依赖安装
     - name: Install system dependencies (macOS)
@@ -44,24 +47,28 @@ jobs:
       run: |
         brew install ffmpeg
     
-    # 分别处理 Python 依赖（避免 PowerShell 和 Bash 语法冲突）
+    # 分别处理 Python 依赖安装
     - name: Install Python dependencies (Linux)
       if: runner.os == 'Linux'
       run: |
         python -m pip install --upgrade pip
-        pip install wheel pyinstaller opencv-python numpy moviepy imageio imageio-ffmpeg tqdm PyQt5 PyQt5-sip
+        pip install wheel pyinstaller==6.5.0 opencv-python-headless numpy==1.26.4 moviepy imageio imageio-ffmpeg tqdm PyQt5
+        
+        # 修复 libgl 错误
+        sudo apt-get install -y libgl1
+        ln -s /usr/lib/x86_64-linux-gnu/libGL.so.1 /usr/lib/x86_64-linux-gnu/libGL.so
     
     - name: Install Python dependencies (Windows)
       if: runner.os == 'Windows'
       run: |
         python -m pip install --upgrade pip
-        pip install wheel pyinstaller opencv-python numpy moviepy imageio imageio-ffmpeg tqdm PyQt5
+        pip install wheel pyinstaller==6.5.0 opencv-python numpy moviepy imageio imageio-ffmpeg tqdm PyQt5
     
     - name: Install Python dependencies (macOS)
       if: runner.os == 'macOS'
       run: |
         python -m pip install --upgrade pip
-        pip install wheel pyinstaller opencv-python numpy moviepy imageio imageio-ffmpeg tqdm PyQt5 PyQt5-Qt5
+        pip install wheel pyinstaller==6.5.0 opencv-python numpy moviepy imageio imageio-ffmpeg tqdm PyQt5==5.15.10
     
     - name: Prepare build
       run: |
@@ -73,22 +80,32 @@ jobs:
     - name: Build executable (Windows)
       if: runner.os == 'Windows'
       run: |
-        pyinstaller --name AutoVideoEditor --onefile --windowed --add-data="version.txt;." --icon=src/icons/icon.ico src/main.py
-        7z a -tzip AutoVideoEditor_Windows.zip dist/AutoVideoEditor.exe
-      
+        pyinstaller --noconfirm --name AutoVideoEditor --onefile --windowed --add-data="version.txt;." --icon=src/icons/icon.ico src/main.py
+        Compress-Archive -Path dist\AutoVideoEditor.exe -DestinationPath AutoVideoEditor_Windows.zip
+    
     # macOS 构建
     - name: Build application (macOS)
       if: runner.os == 'macOS'
       run: |
-        pyinstaller --name AutoVideoEditor --onefile --windowed --add-data="version.txt:." --icon=src/icons/icon.icns src/main.py
+        # 确保权限正确
+        chmod +x src/icons/icon.icns
+        pyinstaller --noconfirm --name AutoVideoEditor --onefile --windowed --add-data="version.txt:." --icon=src/icons/icon.icns src/main.py
+        
+        # 解决 macOS Gatekeeper 错误
+        cd dist
+        xattr -cr AutoVideoEditor
+        cd ..
         zip -r AutoVideoEditor_macOS.zip dist/AutoVideoEditor
     
     # Linux 构建
     - name: Build application (Linux)
       if: runner.os == 'Linux'
       run: |
-        pyinstaller --name AutoVideoEditor --onefile --windowed --add-data="version.txt:." --icon=src/icons/icon.png src/main.py
-        zip -r AutoVideoEditor_Linux.zip dist/AutoVideoEditor
+        # 解决 libQt 错误
+        export QT_QPA_PLATFORM=offscreen
+        pyinstaller --noconfirm --name AutoVideoEditor --onefile --windowed --add-data="version.txt:." --icon=src/icons/icon.png src/main.py
+        cd dist
+        zip -r ../AutoVideoEditor_Linux.zip AutoVideoEditor
     
     # 上传构建产物
     - name: Upload artifacts
