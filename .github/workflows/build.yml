@@ -28,28 +28,33 @@ jobs:
         python -m pip install --upgrade pip
         pip install pyinstaller PyQt5 opencv-python numpy moviepy
     
+    # Windows 构建
     - name: Build executable (Windows)
       if: matrix.os == 'windows-latest'
       run: |
-        pyinstaller --name AutoVideoEditor.exe --onefile --windowed --icon=src/icons/icon.ico src/main.py
+        pyinstaller --name AutoVideoEditor --onefile --windowed --icon=src/icons/icon.ico src/main.py
         Compress-Archive -Path dist/AutoVideoEditor.exe -DestinationPath AutoVideoEditor_Windows.zip
     
+    # macOS 构建
     - name: Build application (macOS)
       if: matrix.os == 'macos-latest'
       run: |
         pyinstaller --name AutoVideoEditor --onefile --windowed --icon=src/icons/icon.icns src/main.py
         zip -r AutoVideoEditor_macOS.zip dist/AutoVideoEditor
     
+    # Linux 构建
     - name: Build application (Linux)
       if: matrix.os == 'ubuntu-latest'
       run: |
         pyinstaller --name AutoVideoEditor --onefile --windowed --icon=src/icons/icon.png src/main.py
         zip -r AutoVideoEditor_Linux.zip dist/AutoVideoEditor
     
+    # 更新后的 artifacts 上传步骤（使用 v4）
     - name: Upload artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: AutoVideoEditor_${{ matrix.os }}
         path: |
           AutoVideoEditor_*
           dist/
+        if-no-files-found: error
