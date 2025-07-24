@@ -1,118 +1,152 @@
-name: Build AutoVideoEditor
+name: AutoVideoEditor Multi-Platform Build
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   release:
-    types: [ created ]
+    types: [created]
 
 jobs:
-  build:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-        python-version: ["3.10"]
-      fail-fast: false
-    
+  windows-build:
+    runs-on: windows-latest
+    name: Build for Windows
     steps:
-    - name: Checkout repository
+    - name: Checkout code
       uses: actions/checkout@v4
-    
-    - name: Set up Python ${{ matrix.python-version }}
+      
+    - name: Set up Python 3.10
       uses: actions/setup-python@v5
       with:
-        python-version: ${{ matrix.python-version }}
-        cache: 'pip'
-    
-    # Ubuntu/Linux 依赖安装
-    - name: Install system dependencies (Linux)
-      if: runner.os == 'Linux'
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y libxcb-xinerama0 libgl1-mesa-glx ffmpeg libxcb-util1 libxcb-render-util0 libxkbcommon-x11-0
-        sudo ln -s /usr/lib/x86_64-linux-gnu/libxcb-util.so.1 /usr/lib/x86_64-linux-gnu/libxcb-util.so.0
-        sudo ln -s /usr/lib/x86_64-linux-gnu/libxcb-render-util.so.0 /usr/lib/x86_64-linux-gnu/libxcb-render-util.so.1
-        sudo ln -s /usr/lib/x86_64-linux-gnu/libxkbcommon.so.0 /usr/lib/x86_64-linux-gnu/libxkbcommon.so
-    
-    # Windows 依赖安装
-    - name: Install system dependencies (Windows)
-      if: runner.os == 'Windows'
-      run: |
-        choco install ffmpeg -y --no-progress
-    
-    # macOS 依赖安装
-    - name: Install system dependencies (macOS)
-      if: runner.os == 'macOS'
-      run: |
-        brew install ffmpeg
-    
-    # 分别处理 Python 依赖安装
-    - name: Install Python dependencies (Linux)
-      if: runner.os == 'Linux'
-      run: |
-        python -m pip install --upgrade pip
-        pip install wheel pyinstaller==6.5.0 opencv-python-headless numpy==1.26.4 moviepy imageio imageio-ffmpeg tqdm PyQt5
+        python-version: "3.10"
         
-        # 修复 libgl 错误
-        sudo apt-get install -y libgl1
-        ln -s /usr/lib/x86_64-linux-gnu/libGL.so.1 /usr/lib/x86_64-linux-gnu/libGL.so
-    
-    - name: Install Python dependencies (Windows)
-      if: runner.os == 'Windows'
+    - name: Install dependencies
       run: |
-        python -m pip install --upgrade pip
-        pip install wheel pyinstaller==6.5.0 opencv-python numpy moviepy imageio imageio-ffmpeg tqdm PyQt5
-    
-    - name: Install Python dependencies (macOS)
-      if: runner.os == 'macOS'
-      run: |
-        python -m pip install --upgrade pip
-        pip install wheel pyinstaller==6.5.0 opencv-python numpy moviepy imageio imageio-ffmpeg tqdm PyQt5==5.15.10
-    
+        python -m pip install --upgrade pip wheel
+        pip install pyinstaller==6.5.0 PyQt5==5.15.10 opencv-python==4.9.0.80 numpy==1.26.4 moviepy==1.0.3 imageio imageio-ffmpeg tqdm
+        
     - name: Prepare build
       run: |
-        echo "Version 1.0.0" > version.txt
-        echo "Build OS: ${{ runner.os }}" >> version.txt
-        echo "Build time: $(date)" >> version.txt
-      
-    # Windows 构建
-    - name: Build executable (Windows)
-      if: runner.os == 'Windows'
-      run: |
-        pyinstaller --noconfirm --name AutoVideoEditor --onefile --windowed --add-data="version.txt;." --icon=src/icons/icon.ico src/main.py
-        Compress-Archive -Path dist\AutoVideoEditor.exe -DestinationPath AutoVideoEditor_Windows.zip
-    
-    # macOS 构建
-    - name: Build application (macOS)
-      if: runner.os == 'macOS'
-      run: |
-        # 确保权限正确
-        chmod +x src/icons/icon.icns
-        pyinstaller --noconfirm --name AutoVideoEditor --onefile --windowed --add-data="version.txt:." --icon=src/icons/icon.icns src/main.py
+        # 创建版本文件
+        echo "Version: 1.0.0" > version.txt
+        echo "Platform: Windows" >> version.txt
+        echo "Build Date: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" >> version.txt
         
-        # 解决 macOS Gatekeeper 错误
-        cd dist
-        xattr -cr AutoVideoEditor
-        cd ..
-        zip -r AutoVideoEditor_macOS.zip dist/AutoVideoEditor
-    
-    # Linux 构建
-    - name: Build application (Linux)
-      if: runner.os == 'Linux'
+    - name: Run PyInstaller
       run: |
-        # 解决 libQt 错误
-        export QT_QPA_PLATFORM=offscreen
-        pyinstaller --noconfirm --name AutoVideoEditor --onefile --windowed --add-data="version.txt:." --icon=src/icons/icon.png src/main.py
-        cd dist
-        zip -r ../AutoVideoEditor_Linux.zip AutoVideoEditor
-    
-    # 上传构建产物
-    - name: Upload artifacts
+        pyinstaller `
+          --noconfirm `
+          --name AutoVideoEditor `
+          --onefile `
+          --windowed `
+          --add-data "version.txt;." `
+          --icon "src/icons/icon.ico" `
+          src/main.py
+        
+    - name: Create release package
+      run: |
+        Compress-Archive -Path "dist\AutoVideoEditor.exe" -DestinationPath "AutoVideoEditor_Windows.zip"
+        
+    - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: AutoVideoEditor_${{ runner.os }}
-        path: |
-          AutoVideoEditor_*.zip
-        retention-days: 7
-        if-no-files-found: error
+        name: AutoVideoEditor_Windows
+        path: AutoVideoEditor_Windows.zip
+
+  linux-build:
+    runs-on: ubuntu-latest
+    name: Build for Linux
+    container: python:3.10-slim-bullseye
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Install dependencies
+      run: |
+        apt-get update
+        apt-get install -y ffmpeg libgl1 libxcb-xinerama0 libxkbcommon-x11-0
+        
+        ln -s /usr/lib/x86_64-linux-gnu/libxcb-util.so.1 /usr/lib/x86_64-linux-gnu/libxcb-util.so.0 || true
+        ln -s /usr/lib/x86_64-linux-gnu/libGL.so.1 /usr/lib/x86_64-linux-gnu/libGL.so || true
+        
+        pip install --upgrade pip wheel
+        pip install pyinstaller==6.5.0 opencv-python-headless==4.9.0.80 numpy==1.26.4 moviepy==1.0.3 imageio imageio-ffmpeg tqdm PyQt5==5.15.10
+        
+    - name: Prepare build
+      run: |
+        echo "Version: 1.0.0" > version.txt
+        echo "Platform: Linux" >> version.txt
+        echo "Build Date: $(date '+%Y-%m-%d %H:%M:%S')" >> version.txt
+        
+    - name: Run PyInstaller
+      run: |
+        export QT_QPA_PLATFORM=offscreen
+        pyinstaller \
+          --noconfirm \
+          --name AutoVideoEditor \
+          --onefile \
+          --add-data "version.txt:." \
+          --icon "src/icons/icon.png" \
+          src/main.py
+        
+    - name: Create release package
+      run: |
+        cd dist
+        zip -r ../AutoVideoEditor_Linux.zip AutoVideoEditor
+        
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: AutoVideoEditor_Linux
+        path: AutoVideoEditor_Linux.zip
+
+  macos-build:
+    runs-on: macos-latest
+    name: Build for macOS
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python 3.10
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.10"
+        
+    - name: Install dependencies
+      run: |
+        brew install ffmpeg
+        python3 -m pip install --upgrade pip wheel
+        pip3 install pyinstaller==6.5.0 PyQt5==5.15.10 opencv-python==4.9.0.80 numpy==1.26.4 moviepy==1.0.3 imageio imageio-ffmpeg tqdm
+        
+    - name: Prepare build
+      run: |
+        echo "Version: 1.0.0" > version.txt
+        echo "Platform: macOS" >> version.txt
+        echo "Build Date: $(date '+%Y-%m-%d %H:%M:%S')" >> version.txt
+        
+    - name: Run PyInstaller
+      run: |
+        pyinstaller \
+          --noconfirm \
+          --name AutoVideoEditor \
+          --onefile \
+          --windowed \
+          --add-data "version.txt:." \
+          --icon "src/icons/icon.icns" \
+          src/main.py
+        
+    - name: Sign application
+      run: |
+        cd dist
+        xattr -cr AutoVideoEditor
+        codesign --force --deep --sign - AutoVideoEditor
+        
+    - name: Create release package
+      run: |
+        cd dist
+        zip -r ../AutoVideoEditor_macOS.zip AutoVideoEditor
+        
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: AutoVideoEditor_macOS
+        path: AutoVideoEditor_macOS.zip
